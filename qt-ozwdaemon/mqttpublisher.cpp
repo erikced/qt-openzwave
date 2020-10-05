@@ -10,6 +10,11 @@
 
 Q_LOGGING_CATEGORY(ozwmp, "ozw.mqtt.publisher");
 
+namespace {
+const quint8 QOS_0 = 0;
+const quint8 QOS_1 = 1;
+const quint8 QOS_2 = 2;
+
 QString mqttClientStateToString(QMqttClient::ClientState state) 
 {
     switch (state) {
@@ -49,7 +54,7 @@ QString mqttClientErrorToString(QMqttClient::ClientError error)
     }
     return "Unknown";
 }
-
+}
 
 mqttpublisher::mqttpublisher(QSettings *settings, QObject *parent) : 
     QObject(parent),
@@ -139,7 +144,7 @@ mqttpublisher::~mqttpublisher() {
     if (!this->m_uncleanshutdown) {
         rapidjson::Document willMsg(rapidjson::kObjectType);
         QT2JS::SetString(willMsg, "Status", "Offline");
-        this->m_client->publish(QMqttTopicName(getTopic(MQTT_OZW_STATUS_TOPIC)), QT2JS::getJSON(willMsg), 0, true);
+        this->m_client->publish(QMqttTopicName(getTopic(MQTT_OZW_STATUS_TOPIC)), QT2JS::getJSON(willMsg), QOS_1, true);
     }
 }
 
@@ -178,7 +183,7 @@ void mqttpublisher::cleanTopics(QMqttMessage msg) {
             QDateTime ts = QDateTime::fromSecsSinceEpoch(jsmsg["TimeStamp"].GetUint64());
             if (ts < this->m_currentStartTime) {
                 qCDebug(ozwmp) << "Removing Stale Topic/Msg: " << msg.topic().name();
-                this->m_client->publish(msg.topic(), "", 0, true);
+                this->m_client->publish(msg.topic(), "", QOS_1, true);
             }
         } else {
             qCWarning(ozwmp) << "MQTT Message on Topic " << msg.topic().name() << "Does not have TimeStamp - Not Cleaning: " << msg.payload();
@@ -192,8 +197,6 @@ void mqttpublisher::brokerError(QMqttClient::ClientError error) {
         qCWarning(ozwmp) << qobject_cast<QSslSocket *>(this->m_client->transport())->errorString();
     }
 }
-
-
 
 void mqttpublisher::doStats() {
     if (!this->isReady())
@@ -228,7 +231,7 @@ void mqttpublisher::doStats() {
     QT2JS::SetInt64(dsjson, "broadcastReadCnt", ds.m_broadcastReadCnt);
     QT2JS::SetInt64(dsjson, "broadcastWriteCnt", ds.m_broadcastWriteCnt);
 
-    this->m_client->publish(QMqttTopicName(getTopic(MQTT_OZW_STATS_TOPIC)), QT2JS::getJSON(dsjson), 0, false);
+    this->m_client->publish(QMqttTopicName(getTopic(MQTT_OZW_STATS_TOPIC)), QT2JS::getJSON(dsjson), QOS_0, false);
 
     for (int i = 0; i < this->m_nodeModel->rowCount(QModelIndex()); i++) {
         rapidjson::Document nsjson;
@@ -267,7 +270,7 @@ void mqttpublisher::doStats() {
         QT2JS::SetInt(nsjson, "routeTries", ns.routeTries); /**< The Number of attempts the Controller made to route the packet to the Node */
         QT2JS::SetInt(nsjson, "lastFailedLinkFrom", ns.lastFailedLinkFrom); /**< The Last Failed Link From */
         QT2JS::SetInt(nsjson, "lastFailedLinkTo", ns.lastFailedLinkTo); /**< The Last Failed Link To */
-        this->m_client->publish(QMqttTopicName(getNodeTopic(MQTT_OZW_STATS_NODE_TOPIC, NodeID)), QT2JS::getJSON(nsjson), 0, false);
+        this->m_client->publish(QMqttTopicName(getNodeTopic(MQTT_OZW_STATS_NODE_TOPIC, NodeID)), QT2JS::getJSON(nsjson), QOS_0, false);
     }
 
 }
@@ -408,7 +411,7 @@ void mqttpublisher::updateLogStateChange()
     } else if (this->m_client->state() == QMqttClient::ClientState::Connected) {
         qCInfo(ozwmp) << "MQTT Client Connected";
         this->setReady(true);
-        this->m_cleanTopicSubscription = this->m_client->subscribe(QMqttTopicFilter(getTopic("#")));
+        this->m_cleanTopicSubscription = this->m_client->subscribe(QMqttTopicFilter(getTopic("#")), QOS_2);
         connect(this->m_cleanTopicSubscription, &QMqttSubscription::messageReceived, this, &mqttpublisher::cleanTopics);
         this->m_commands->setupSubscriptions(this->m_client, this->getCommandTopic());
         return;
@@ -431,7 +434,7 @@ void mqttpublisher::brokerDisconnected()
 
 bool mqttpublisher::sendStatusUpdate() {
     QT2JS::SetUInt64(this->m_ozwstatus, "TimeStamp", QDateTime::currentSecsSinceEpoch());
-    this->m_client->publish(QMqttTopicName(getTopic(MQTT_OZW_STATUS_TOPIC)), QT2JS::getJSON(this->m_ozwstatus), 0, true);
+    this->m_client->publish(QMqttTopicName(getTopic(MQTT_OZW_STATUS_TOPIC)), QT2JS::getJSON(this->m_ozwstatus), QOS_1, true);
     if (!this->isReady())
         return false;
     return true;
@@ -451,7 +454,7 @@ bool mqttpublisher::clearStatusUpdate() {
 
 bool mqttpublisher::sendNodeUpdate(quint8 node) {
     QT2JS::SetUInt64(*this->m_nodes[node], "TimeStamp", QDateTime::currentSecsSinceEpoch());
-    this->m_client->publish(QMqttTopicName(getNodeTopic(MQTT_OZW_NODE_TOPIC, node)), QT2JS::getJSON(*this->m_nodes[node]), 0, true);
+    this->m_client->publish(QMqttTopicName(getNodeTopic(MQTT_OZW_NODE_TOPIC, node)), QT2JS::getJSON(*this->m_nodes[node]), QOS_1, true);
     if (!this->isReady())
         return false;
     return true;
@@ -474,7 +477,7 @@ bool mqttpublisher::sendValueUpdate(quint64 vidKey) {
         return false;
     }
     QT2JS::SetUInt64(*this->m_values[vidKey], "TimeStamp", QDateTime::currentSecsSinceEpoch()); 
-    this->m_client->publish(QMqttTopicName(getValueTopic(MQTT_OZW_VID_TOPIC, node, instance, cc, vidKey)), QT2JS::getJSON(*this->m_values[vidKey]), 0, true);
+    this->m_client->publish(QMqttTopicName(getValueTopic(MQTT_OZW_VID_TOPIC, node, instance, cc, vidKey)), QT2JS::getJSON(*this->m_values[vidKey]), 1, true);
     if (!this->isReady())
         return false;
     return true;
@@ -486,7 +489,7 @@ bool mqttpublisher::sendInstanceUpdate(quint8 node, quint8 instance) {
         return false;
     }
     QT2JS::SetUInt64(*jsinstance, "TimeStamp", QDateTime::currentSecsSinceEpoch());
-    this->m_client->publish(QMqttTopicName(getInstanceTopic(MQTT_OZW_INSTANCE_TOPIC, node, instance)), QT2JS::getJSON(*jsinstance), 0, true);
+    this->m_client->publish(QMqttTopicName(getInstanceTopic(MQTT_OZW_INSTANCE_TOPIC, node, instance)), QT2JS::getJSON(*jsinstance), 1, true);
     if (!this->isReady())
         return false;
     return true;
@@ -498,7 +501,7 @@ bool mqttpublisher::sendCommandClassUpdate(quint8 node, quint8 instance, quint8 
         return false;
     }
     QT2JS::SetUInt64(*jsCommandClass, "TimeStamp", QDateTime::currentSecsSinceEpoch());
-    this->m_client->publish(QMqttTopicName(getCommandClassTopic(MQTT_OZW_COMMANDCLASS_TOPIC, node, instance, cc)), QT2JS::getJSON(*jsCommandClass), 0, true);
+    this->m_client->publish(QMqttTopicName(getCommandClassTopic(MQTT_OZW_COMMANDCLASS_TOPIC, node, instance, cc)), QT2JS::getJSON(*jsCommandClass), QOS_1, true);
     if (!this->isReady())
         return false;
     return true;
@@ -506,7 +509,7 @@ bool mqttpublisher::sendCommandClassUpdate(quint8 node, quint8 instance, quint8 
 
 bool mqttpublisher::sendCommandUpdate(QString command, rapidjson::Document &js) {
     QT2JS::SetUInt64(js, "TimeStamp", QDateTime::currentSecsSinceEpoch());
-    this->m_client->publish(QMqttTopicName(getCommandResponseTopic(command.toLower())), QT2JS::getJSON(js), 0, false);
+    this->m_client->publish(QMqttTopicName(getCommandResponseTopic(command.toLower())), QT2JS::getJSON(js), QOS_1, false);
     if (!this->isReady())
         return false;
     return true;
@@ -514,15 +517,15 @@ bool mqttpublisher::sendCommandUpdate(QString command, rapidjson::Document &js) 
 
 bool mqttpublisher::sendAssociationUpdate(quint8 node, quint8 group, rapidjson::Document &js) {
     QT2JS::SetUInt64(js, "TimeStamp", QDateTime::currentSecsSinceEpoch());
-    this->m_client->publish(QMqttTopicName(getAssociationTopic(node, group)), QT2JS::getJSON(js), 0, true);
+    this->m_client->publish(QMqttTopicName(getAssociationTopic(node, group)), QT2JS::getJSON(js), QOS_1, true);
     if (!this->isReady())
         return false;
     return true;
 }
 
 bool mqttpublisher::delNodeTopic(quint8 node) {
-    this->m_client->publish(QMqttTopicName(getNodeTopic(MQTT_OZW_NODE_TOPIC, node)), NULL, 0, true);
-    this->m_client->publish(QMqttTopicName(getNodeTopic(MQTT_OZW_STATS_NODE_TOPIC, node)), NULL, 0, true);
+    this->m_client->publish(QMqttTopicName(getNodeTopic(MQTT_OZW_NODE_TOPIC, node)), NULL, QOS_1, true);
+    this->m_client->publish(QMqttTopicName(getNodeTopic(MQTT_OZW_STATS_NODE_TOPIC, node)), NULL, QOS_1, true);
     if (!this->isReady())
         return false;
     return true;
@@ -544,28 +547,28 @@ bool mqttpublisher::delValueTopic(quint64 vidKey) {
         qCWarning(ozwmp) << "sendValueUpdate: Can't find CC for Value: " << vidKey;
         return false;
     }
-    this->m_client->publish(QMqttTopicName(getValueTopic(MQTT_OZW_VID_TOPIC, node, instance, cc, vidKey)), NULL, 0, true);
+    this->m_client->publish(QMqttTopicName(getValueTopic(MQTT_OZW_VID_TOPIC, node, instance, cc, vidKey)), NULL, QOS_1, true);
     if (!this->isReady())
         return false;
     return true;
 }
 
 bool mqttpublisher::delInstanceTopic(quint8 node, quint8 instance) {
-    this->m_client->publish(QMqttTopicName(getInstanceTopic(MQTT_OZW_INSTANCE_TOPIC, node, instance)), NULL, 0, true);
+    this->m_client->publish(QMqttTopicName(getInstanceTopic(MQTT_OZW_INSTANCE_TOPIC, node, instance)), NULL, QOS_1, true);
     if (!this->isReady())
         return false;
     return true;
 }
 
 bool mqttpublisher::delCommandClassTopic(quint8 node, quint8 instance, quint8 cc) {
-    this->m_client->publish(QMqttTopicName(getCommandClassTopic(MQTT_OZW_COMMANDCLASS_TOPIC, node, instance, cc)), NULL, 0, true);
+    this->m_client->publish(QMqttTopicName(getCommandClassTopic(MQTT_OZW_COMMANDCLASS_TOPIC, node, instance, cc)), NULL, QOS_1, true);
     if (!this->isReady())
         return false;
     return true;
 }
 
 bool mqttpublisher::delAssociationTopic(quint8 node, quint8 group) {
-    this->m_client->publish(QMqttTopicName(getAssociationTopic(node, group)), NULL, 0, true);
+    this->m_client->publish(QMqttTopicName(getAssociationTopic(node, group)), NULL, QOS_1, true);
     if (!this->isReady())
         return false;
     return true;

@@ -267,12 +267,13 @@ void MqttCommands::setupCommands() {
 }
 
 void MqttCommands::setupSubscriptions(QMqttClient *mqttclient, QString topTopic) {
+    const quint8 qos = 2;
     QMap<QString, pfnCreateCommand_t>::iterator it;
     for (it = this->m_commands.begin(); it != this->m_commands.end(); it++) {
         qCDebug(ozwmc) << "Creating Subscription for " << it.key();
         pfnCreateCommand_t cmd = it.value();
         MqttCommand *command = cmd(this->parent());
-        QMqttSubscription *subscription = mqttclient->subscribe(QMqttTopicFilter(topTopic.arg(it.key().toLower())));
+        QMqttSubscription *subscription = mqttclient->subscribe(QMqttTopicFilter(topTopic.arg(it.key().toLower())), qos);
         command->Setup(subscription);        
     }
 
