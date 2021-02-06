@@ -2,6 +2,7 @@
 #define MQTTPUBLISHER_H
 
 #include <QObject>
+#include <QThread>
 
 #include <QtMqtt/QMqttClient>
 #include <QTimer>
@@ -133,6 +134,7 @@ private:
     QDateTime m_currentStartTime;
     bool m_ready;
     bool m_uncleanshutdown;
+    QThread m_client_thread;
 };
 
 #endif // MQTTPUBLISHER_H

@@ -62,7 +62,7 @@ mqttpublisher::mqttpublisher(QSettings *settings, QObject *parent) :
     m_uncleanshutdown(false)
 {
     this->settings = settings;
-    this->m_client = new QMqttClient(this);
+    this->m_client = new QMqttClient(nullptr);
     this->m_client->setHostname(settings->value("MQTTServer", "127.0.0.1").toString());
     this->m_client->setPort(static_cast<quint16>(settings->value("MQTTPort", 1883).toInt()));
     this->m_client->setClientId(QString("qt-openzwave-%1").arg(settings->value("Instance", 1).toInt()));
@@ -87,10 +87,11 @@ mqttpublisher::mqttpublisher(QSettings *settings, QObject *parent) :
     }
     this->m_ozwstatus.SetObject();
 
+    this->m_client->moveToThread(&this->m_client_thread);
+
     /* setup the Commands */
     this->m_commands =  new MqttCommands(this);
     this->m_commands->setupCommands();
-
 
     connect(this->m_client, &QMqttClient::stateChanged, this, &mqttpublisher::updateLogStateChange);
     connect(this->m_client, &QMqttClient::disconnected, this, &mqttpublisher::brokerDisconnected);
@@ -108,6 +109,8 @@ mqttpublisher::mqttpublisher(QSettings *settings, QObject *parent) :
     this->m_client->setWillMessage(QT2JS::getJSON(willMsg));
     this->m_client->setWillRetain(true);
     connect(&this->m_statsTimer, &QTimer::timeout, this, &mqttpublisher::doStats);
+
+    this->m_client_thread.start();
 }
 
 mqttpublisher::~mqttpublisher() {
@@ -145,7 +148,11 @@ mqttpublisher::~mqttpublisher() {
         rapidjson::Document willMsg(rapidjson::kObjectType);
         QT2JS::SetString(willMsg, "Status", "Offline");
         this->m_client->publish(QMqttTopicName(getTopic(MQTT_OZW_STATUS_TOPIC)), QT2JS::getJSON(willMsg), QOS_1, true);
+        this->m_client_thread.quit();
+    } else {
+        this->m_client_thread.terminate();
     }
+    this->m_client_thread.wait();
 }
 
 bool mqttpublisher::isReady()
