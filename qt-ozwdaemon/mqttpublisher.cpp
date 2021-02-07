@@ -110,6 +110,7 @@ mqttpublisher::mqttpublisher(QSettings *settings, QObject *parent) :
     this->m_client->setWillRetain(true);
     connect(&this->m_statsTimer, &QTimer::timeout, this, &mqttpublisher::doStats);
 
+    this->m_client_thread.setObjectName("OZW-mqtt");
     this->m_client_thread.start();
 }
 
